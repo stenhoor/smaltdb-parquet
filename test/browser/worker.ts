@@ -1,6 +1,8 @@
-// The engine worker entry, as an application writes it (smaltdb ADR 0012): Parquet over sources from @smaltdb/external.
-import { serve } from 'smaltdb/worker-runtime';
+// The engine worker entry, as an application writes it (smaltdb ADR 0012, 0015): SQL from smaltql, and Parquet over
+// sources from @smaltdb/external.
+import { defineWorker } from 'smaltdb/worker-runtime';
+import { sqlLanguage } from 'smaltql';
 import external from '@smaltdb/external';
 import parquet from '../../src/index.js';
 
-serve({ plugins: [external, parquet] });
+defineWorker({ languages: [sqlLanguage], plugins: [external, parquet] });

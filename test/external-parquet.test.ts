@@ -83,6 +83,38 @@ describe('Parquet values and types', () => {
     await registerFile(d, 'bad.parquet', 'not parquet at all');
     expect((await d.queryAsync("SELECT * FROM read_parquet('file:bad.parquet')").catch((e: Error) => e.message)) as string).toMatch(/not a readable Parquet file/);
   });
+  it('lists, structs and maps are list and struct values (smaltdb ADR 0020)', async () => {
+    const d = await db();
+    await d.execAsync(`CREATE EXTERNAL TABLE n WITH (location = '${F}/nested.parquet')`);
+    const cols = d.catalog.table('n')!.columns;
+    expect(cols.map((c) => [c.name, c.type])).toEqual([
+      ['id', 'int'],
+      ['pts', 'list<struct<x real, tag text>>'],
+      ['grid', 'list<list<int>>'],
+      ['attrs', 'list<struct<key text, value int>>'],
+      ['byid', 'list<struct<key int, value text>>'],
+      ['flags', 'list<bool>'],
+      ['days', 'list<date>'],
+      // A field name smaltdb's struct types don't take: JSON text, as before.
+      ['odd', 'text'],
+    ]);
+    // In a plan they are lists and structs, given as arrays and objects, and the list operations take them.
+    const scan = p.source('external', 'n', [], cols.map((c) => c.type));
+    const all = await d.queryPlanAsync(p.project(scan, cols.map((c, i) => p.col(0, i, c.type))));
+    expect(all.rows).toEqual([
+      [1, [{ x: 1.5, tag: 'a' }, { x: null, tag: null }], [[1, 2], [3]], [{ key: 'a', value: 1 }, { key: 'b', value: 2 }], [{ key: 7, value: 'x' }], [true, null], ['2024-02-29'], '{"a-b":1}'],
+      [2, [], [[], null], [], null, null, [], null],
+      [3, null, [null], null, [], [false], null, '{"a-b":2}'],
+    ]);
+    const len = await d.queryPlanAsync(p.project(scan, [p.call('list_len', [p.col(0, 2, 'list<list<int>>')], 'int'), p.call('list_get', [p.col(0, 1, 'list<struct<x real, tag text>>'), p.lit(0, 'int')], 'struct<x real, tag text>')]));
+    expect(len.rows).toEqual([
+      [2, { x: 1.5, tag: 'a' }],
+      [2, null],
+      [1, null],
+    ]);
+    // SQL sees them as JSON text.
+    expect((await d.queryAsync('SELECT attrs, grid FROM n WHERE id = 1')).rows).toEqual([['[{"key":"a","value":1},{"key":"b","value":2}]', '[[1,2],[3]]']]);
+  });
 });
 
 type Request = { file: string; bytes: number; range: string | null; method: string; gzip?: boolean };

@@ -53,9 +53,10 @@ async function readParquet(file: RandomAccessFile, req: FormatRequest): Promise<
     throw Object.assign(new Error(`not a readable Parquet file: ${(e as Error).message}`), { wholeFileMayHelp: true });
   }
   const schema = pq.parquetSchema(meta).children;
-  const fileCols: FormatColumn[] = schema.map((c) => {
-    const type = parquetTemporalType(c);
-    return { name: c.element.name, declType: parquetDeclType(c), ...(type ? { type } : {}) };
+  const nested = schema.map((c) => (c.children.length > 0 ? nestedShape(c) : undefined));
+  const fileCols: FormatColumn[] = schema.map((c, i) => {
+    const type = nested[i]?.type ?? parquetTemporalType(c);
+    return { name: c.element.name, declType: parquetDeclType(c), ...(type ? { type } : {}) } as FormatColumn;
   });
   if (req.schemaOnly) return { columns: fileCols, rows: [] };
   const out = req.columns ?? fileCols;
@@ -64,6 +65,12 @@ async function readParquet(file: RandomAccessFile, req: FormatRequest): Promise<
   const want = out.filter((c) => actual.has(c.name.toLowerCase()) && (req.projection === undefined || req.projection.has(c.name.toLowerCase())));
   const at = new Map(want.map((c, i) => [c.name.toLowerCase(), i]));
   const pos = out.map((c) => at.get(c.name.toLowerCase()) ?? -1);
+  // How each read column's values are given: lists and structs as JS (their type's shape), the others as SQL values.
+  const shapeOf = new Map(schema.map((c, i) => [c.element.name.toLowerCase(), nested[i]]));
+  const convert = want.map((c): ((v: unknown) => unknown) => {
+    const s = shapeOf.get(c.name.toLowerCase());
+    return s ? (v) => (v === null || v === undefined ? null : s.value(v)) : parquetValue;
+  });
   // Row groups whose statistics cannot rule them out, as row ranges.
   const ranges: [number, number][] = [];
   let start = 0;
@@ -103,7 +110,7 @@ async function readParquet(file: RandomAccessFile, req: FormatRequest): Promise<
     } catch (e) {
       throw new Error(`Parquet: ${(e as Error).message}`);
     }
-    for (const r of chunk) rows.push(pos.map((i) => (i < 0 ? null : parquetValue(r[i]))));
+    for (const r of chunk) rows.push(pos.map((i) => (i < 0 ? null : (convert[i](r[i]) as SqlValue))));
   }
   return { columns: out, rows };
 }
@@ -136,7 +143,87 @@ function parquetTemporalType(c: Hyparquet.SchemaTree): 'date' | 'datetime' | und
   return undefined;
 }
 
-/** The declared type of a top-level Parquet column (nested ones are JSON text). */
+/** A Parquet column's smaltdb type, and its values (as hyparquet decodes them) as the engine takes them. */
+interface Shape {
+  type: string;
+  value: (v: unknown) => unknown;
+}
+
+/** A struct field name smaltdb's struct types can hold (smaltdb ADR 0020). */
+const FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** Elements: integers within 2^53 as numbers, NaN as null (as top-level values); the engine checks the rest. */
+const leafValue = (v: unknown): unknown => (typeof v === 'bigint' ? (v >= MIN_SAFE && v <= MAX_SAFE ? Number(v) : v) : typeof v === 'number' && Number.isNaN(v) ? null : v);
+
+/** A map's keys as hyparquet gives them (object keys, so text) back as values of the key type. */
+const MAP_KEYS: Record<string, (k: string) => unknown> = {
+  text: (k) => k,
+  int: (k) => leafValue(BigInt(k)),
+  real: (k) => Number(k),
+  date: (k) => Number(k),
+  datetime: (k) => leafValue(BigInt(k)),
+};
+
+/**
+ * A nested Parquet column as a smaltdb list or struct type (ADR 0020): a LIST as `list<…>`, a group as `struct<…>`,
+ * a MAP as `list<struct<key K, value V>>` (its entries in file order). undefined when smaltdb's types cannot hold it
+ * (a field name they don't take, a key type, a VARIANT, a repeated field outside a LIST): that column stays JSON text.
+ */
+function nestedShape(c: Hyparquet.SchemaTree, inList = false): Shape | undefined {
+  const e = c.element;
+  if (e.repetition_type === 'REPEATED' && !inList) return undefined;
+  if (e.converted_type === 'LIST') {
+    if (c.children.length !== 1 || c.children[0].children.length > 1 || c.children[0].element.repetition_type !== 'REPEATED') return undefined;
+    // Three levels (LIST > repeated group > element), or the legacy two (LIST > repeated element), as hyparquet reads them.
+    const rep = c.children[0];
+    const of = rep.children.length === 1 ? nestedShape(rep.children[0]) : nestedShape(rep, true);
+    if (!of) return undefined;
+    return { type: `list<${of.type}>`, value: (v) => (v as unknown[]).map((x) => (x === null || x === undefined ? null : of.value(x))) };
+  }
+  if (e.converted_type === 'MAP') {
+    const kv = c.children[0];
+    if (c.children.length !== 1 || kv.children.length !== 2 || kv.element.repetition_type !== 'REPEATED') return undefined;
+    const kc = kv.children.find((x) => x.element.name === 'key');
+    const vc = kv.children.find((x) => x.element.name === 'value');
+    const key = kc && nestedShape(kc);
+    const val = vc && nestedShape(vc);
+    const keyOf = key && MAP_KEYS[key.type];
+    if (!key || !val || !keyOf) return undefined;
+    return {
+      type: `list<struct<key ${key.type}, value ${val.type}>>`,
+      value: (v) => Object.entries(v as Record<string, unknown>).map(([k, x]) => ({ key: keyOf(k), value: x === null || x === undefined ? null : val.value(x) })),
+    };
+  }
+  if (c.children.length > 0) {
+    if (e.logical_type?.type === 'VARIANT') return undefined;
+    const fields: [string, Shape][] = [];
+    for (const f of c.children) {
+      const s = nestedShape(f);
+      if (!s || !FIELD_NAME.test(f.element.name)) return undefined;
+      fields.push([f.element.name, s]);
+    }
+    return {
+      type: `struct<${fields.map(([n, s]) => `${n} ${s.type}`).join(', ')}>`,
+      value: (v) => {
+        const o = v as Record<string, unknown>;
+        const out: Record<string, unknown> = {};
+        for (const [n, s] of fields) out[n] = o[n] === null || o[n] === undefined ? null : s.value(o[n]);
+        return out;
+      },
+    };
+  }
+  return { type: elementType(c), value: leafValue };
+}
+
+/** The smaltdb type of a Parquet value inside a list or struct. */
+function elementType(c: Hyparquet.SchemaTree): string {
+  const t = parquetTemporalType(c);
+  if (t) return t;
+  if (c.element.type === 'BOOLEAN') return 'bool';
+  return { INTEGER: 'int', REAL: 'real', TEXT: 'text', BLOB: 'blob' }[parquetDeclType(c)] ?? 'blob';
+}
+
+/** The declared type of a top-level Parquet column (nested ones are TEXT: JSON text where no list or struct type holds them). */
 function parquetDeclType(c: Hyparquet.SchemaTree): string {
   const e = c.element;
   if (c.children.length > 0) return 'TEXT';
@@ -162,7 +249,7 @@ function parquetDeclType(c: Hyparquet.SchemaTree): string {
 const MIN_SAFE = BigInt(Number.MIN_SAFE_INTEGER);
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 
-/** A value hyparquet decoded, as a SQL value (nested values as JSON text). */
+/** A value hyparquet decoded, as a SQL value (nested values smaltdb's types can't hold as JSON text). */
 function parquetValue(v: unknown): SqlValue {
   if (v === null || v === undefined) return null;
   if (typeof v === 'number') return Number.isNaN(v) ? null : v;

@@ -1,5 +1,9 @@
 # @smaltdb/parquet
 
+<a href="https://smaltworks.dev/stability"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/stenhoor/smalt-brand/main/badges/work-in-progress-on-dark.svg"><img alt="Work in progress. Come build with us." src="https://raw.githubusercontent.com/stenhoor/smalt-brand/main/badges/work-in-progress.svg" height="56"></picture></a>
+
+[Writing plugins](https://smaltdb.dev/reference/api/plugins) · [smaltworks.dev](https://smaltworks.dev/products/plugins)
+
 The Parquet format for [smaltdb](https://github.com/stenhoor/smaltdb): `read_parquet()` and external tables over
 `.parquet` files. Files are decoded with [hyparquet](https://github.com/hyparam/hyparquet). Only the footer, the
 columns a statement uses and the row groups its filters cannot rule out are read.
@@ -43,3 +47,7 @@ npm run test:browser     # Parquet over HTTP in a browser (Playwright)
 
 The fixtures in `test/fixtures/parquet` are written by pyarrow: `pip install pyarrow && python3 scripts/gen-parquet-fixtures.py`.
 See [CLAUDE.md](CLAUDE.md) for how the pins work.
+
+<a href="https://smaltworks.dev"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/stenhoor/smalt-brand/main/badges/a-smaltworks-project-on-dark.svg"><img alt="A smaltworks project" src="https://raw.githubusercontent.com/stenhoor/smalt-brand/main/badges/a-smaltworks-project.svg" height="28"></picture></a>
+
+MIT License.

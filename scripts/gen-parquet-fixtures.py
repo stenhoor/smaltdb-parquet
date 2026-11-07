@@ -49,4 +49,17 @@ for year in (2023, 2024):
         d = os.path.join(OUT, 'events', f'year={year}', f'month={month:02d}')
         os.makedirs(d, exist_ok=True)
         pq.write_table(pa.table({'n': pa.array([year * 100 + month, year * 100 + month + 1], pa.int32())}), os.path.join(d, 'part-0.parquet'))
+# Lists, structs and maps, nested (smaltdb ADR 0020): list<struct>, list<list>, a map, and a field name smaltdb's
+# struct types cannot hold (that column stays JSON text).
+nested = pa.table({
+    'id': pa.array([1, 2, 3], pa.int32()),
+    'pts': pa.array([[{'x': 1.5, 'tag': 'a'}, {'x': None, 'tag': None}], [], None], pa.list_(pa.struct([('x', pa.float64()), ('tag', pa.string())]))),
+    'grid': pa.array([[[1, 2], [3]], [[], None], [None]], pa.list_(pa.list_(pa.int64()))),
+    'attrs': pa.array([[('a', 1), ('b', 2)], [], None], pa.map_(pa.string(), pa.int32())),
+    'byid': pa.array([[(7, 'x')], None, []], pa.map_(pa.int64(), pa.string())),
+    'flags': pa.array([[True, None], None, [False]], pa.list_(pa.bool_())),
+    'days': pa.array([[dt.date(2024, 2, 29)], [], None], pa.list_(pa.date32())),
+    'odd': pa.array([{'a-b': 1}, None, {'a-b': 2}], pa.struct([('a-b', pa.int32())])),
+})
+pq.write_table(nested, os.path.join(OUT, 'nested.parquet'))
 print('written', OUT)

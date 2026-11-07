@@ -15,11 +15,11 @@ import external from '@smaltdb/external';
 import { registerFile } from '@smaltdb/external/client';
 import io from '@smaltdb/io';
 import { Database, type SqlValue } from 'smaltdb/engine';
-import { parse } from 'smaltql';
+import { parse } from '@smaltworks/smaltql';
 import parquet from '../src/index.js';
 
 const pins = JSON.parse(readFileSync('packed.json', 'utf8')) as Record<string, { ref: string }>;
-const DOCS = join('.cache', 'packed', `smaltql-${pins.smaltql.ref}-files`, 'docs');
+const DOCS = join('.cache', 'packed', `smaltworks-smaltql-${pins['@smaltworks/smaltql']!.ref}-files`, 'docs');
 const PAGE_DIRS = ['guide', 'reference'];
 const EXAMPLES = join(DOCS, 'examples');
 const MARKER = /<!--\s*docs:plugin\s+@smaltdb\/parquet\s*-->/;

@@ -1,10 +1,11 @@
 /**
- * smaltdb's documentation examples that need Parquet. smaltdb's docs (docs/guide, docs/reference) mark them with
- * `<!-- docs:plugin @smaltdb/parquet -->`, and smaltdb's own docs test skips them. Here every page with such a block runs
- * top to bottom with all three plugins installed, as smaltdb's harness does, against the docs at the smaltdb commit
- * pinned in packed.json (kept by scripts/fetch-packed.mjs). TypeScript examples on those pages are type-checked
- * against that smaltdb, the installed plugins and this plugin's source. The harness and its markers are described in
- * smaltdb's test/docs-examples.test.ts and docs/TESTING.md ("Documentation examples").
+ * smaltql's documentation examples that need Parquet (the SQL guide and references moved from smaltdb to smaltql, smaltdb
+ * ADR 0015). smaltql's docs (docs/guide, docs/reference) mark them with `<!-- docs:plugin @smaltdb/parquet -->`, and
+ * smaltql's own docs test skips them. Here every page with such a block runs top to bottom with all three plugins
+ * installed, as smaltql's harness does, against the docs at the smaltql commit pinned in packed.json (kept by
+ * scripts/fetch-packed.mjs). TypeScript examples on those pages are type-checked against the pinned smaltdb and smaltql,
+ * the installed plugins and this plugin's source. The harness and its markers are described in smaltql's
+ * test/docs-examples.test.ts.
  */
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -13,11 +14,12 @@ import { describe, expect, it } from 'vitest';
 import external from '@smaltdb/external';
 import { registerFile } from '@smaltdb/external/client';
 import io from '@smaltdb/io';
-import { Database, parse, type SqlValue } from 'smaltdb/engine';
+import { Database, type SqlValue } from 'smaltdb/engine';
+import { parse } from 'smaltql';
 import parquet from '../src/index.js';
 
 const pins = JSON.parse(readFileSync('packed.json', 'utf8')) as Record<string, { ref: string }>;
-const DOCS = join('.cache', 'packed', `smaltdb-${pins.smaltdb.ref}-files`, 'docs');
+const DOCS = join('.cache', 'packed', `smaltql-${pins.smaltql.ref}-files`, 'docs');
 const PAGE_DIRS = ['guide', 'reference'];
 const EXAMPLES = join(DOCS, 'examples');
 const MARKER = /<!--\s*docs:plugin\s+@smaltdb\/parquet\s*-->/;

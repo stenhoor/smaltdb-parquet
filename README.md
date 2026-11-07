@@ -37,7 +37,7 @@ See the [plugins guide](https://github.com/stenhoor/smaltdb/blob/main/docs/guide
 
 ```sh
 npm ci && npm run deps   # deps: the pinned smaltdb, @smaltdb/io and @smaltdb/external builds from packed.json
-npm run check            # type-check, unit tests and smaltdb's Parquet docs examples
+npm run check            # type-check, unit tests and smaltql's Parquet docs examples
 npm run test:browser     # Parquet over HTTP in a browser (Playwright)
 ```
 

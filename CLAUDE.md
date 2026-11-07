@@ -11,7 +11,7 @@ starting point, and its working rules match smaltdb's `CLAUDE.md`.
 | Command | What it does | When |
 |---|---|---|
 | `npm ci && npm run deps` | Installs dependencies, then the pinned builds in `packed.json` (see below) | First, and again after every `npm ci` or `npm install` |
-| `npm run check` | `npm run typecheck` then `npm test` (vitest): what CI runs, including smaltdb's Parquet docs examples | Before every commit |
+| `npm run check` | `npm run typecheck` then `npm test` (vitest): what CI runs, including smaltql's Parquet docs examples | Before every commit |
 | `npm run build` | `dist/`: the bundled plugin (`index.js`) and its type declarations | Packaging checks |
 | `npm run test:browser` | Parquet over HTTP in a real browser through the engine worker, including hosts that compress responses (smaltdb#32). CI runs it on Chromium, Firefox and WebKit | Changes to reading remote files |
 | `python3 scripts/gen-parquet-fixtures.py` | Regenerates `test/fixtures/parquet` with pyarrow (`pip install pyarrow`), an independent writer | New fixture cases |
@@ -35,7 +35,7 @@ types; `npm run build` checks its declarations against smaltdb's published types
   entry registers it with `defineWorker({ languages: [sqlLanguage], plugins })`.
 - The plugin imports only types from `smaltdb/engine`; nothing from smaltdb is bundled or imported at run time.
 - Dependencies: `hyparquet` (MIT) and the optional peer `hyparquet-compressors`. They are never bundled into `dist/`, so npm installs them with their own licences. Adding or upgrading one needs the owner's agreement (smaltdb ADR 0012: third-party code stays in the plugin that needs it). The tests also install `@smaltdb/io` and `@smaltdb/external` (pinned in `packed.json`).
-- smaltdb's docs examples that need Parquet are marked `<!-- docs:plugin @smaltdb/parquet -->` there and run here (`test/docs-examples.test.ts`), against the docs at the pinned smaltdb commit. After a smaltdb docs change that touches them, update the `smaltdb` pin.
+- smaltql's docs examples that need Parquet (the SQL guide and references, which moved from smaltdb to smaltql) are marked `<!-- docs:plugin @smaltdb/parquet -->` there and run here (`test/docs-examples.test.ts`), against the docs at the pinned smaltql commit. After a smaltql docs change that touches them, update the `smaltql` pin.
 - A change to the plugin interface belongs in smaltdb first. Update the `smaltdb` pin here once it is merged.
 - Don't reformat files with Prettier. No fixed sleeps in tests: wait with `until()` / `pause()` from
   `test/helpers/wait.ts`.
@@ -70,8 +70,8 @@ issue when the owner points it to one. Handle that issue in the issue itself, so
 
 ## Cross-repo impact
 
-- smaltdb's docs (smaltdb.dev) describe this plugin. A change to its SQL surface or helpers needs a matching smaltdb
-  docs PR, linked with `Depends on:`.
+- smaltql's docs (`read_parquet`, external data) and smaltdb's (smaltdb.dev: the plugin interface) describe this plugin. A
+  change to its SQL surface or helpers needs a matching docs PR there, linked with `Depends on:`.
 - smaltdb's CI installs the plugins it pins (`@smaltdb/io`, `@smaltdb/external`) for its docs examples and browser
   tests. After a change here, update the pin in smaltdb's `packed.json`.
 - Brand assets and voice come from `stenhoor/smalt-brand`.

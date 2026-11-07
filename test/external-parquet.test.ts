@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Database, MemoryVfs } from 'smaltdb/engine';
+import { Database, MemoryVfs, plan as p } from 'smaltdb/engine';
 import external from '@smaltdb/external';
 import { registerFile } from '@smaltdb/external/client';
 import parquet from '../src/index.js';
@@ -39,15 +39,29 @@ describe('Parquet values and types', () => {
       ['b', 'INTEGER'],
       ['s', 'TEXT'],
       ['bin', 'BLOB'],
-      ['d', 'TEXT'],
-      ['ts', 'TEXT'],
-      ['tsu', 'TEXT'],
+      ['d', 'DATE'],
+      ['ts', 'TIMESTAMP'],
+      ['tsu', 'TIMESTAMP'],
       ['dec', 'REAL'],
       ['lst', 'TEXT'],
       ['st', 'TEXT'],
     ]);
     // Dates compare and work with the date functions like SQLite text dates.
     expect((await d.queryAsync("SELECT date(d, '+1 day'), strftime('%Y', ts) FROM t WHERE d > '2000-01-01'")).rows).toEqual([['2024-03-01', '2024']]);
+  });
+
+  it('dates and timestamps are date and datetime values (smaltdb ADR 0019)', async () => {
+    const d = await db();
+    await d.execAsync(`CREATE EXTERNAL TABLE t WITH (location = '${F}/types.parquet')`);
+    expect(d.catalog.table('t')!.columns.filter((c) => ['d', 'ts', 'tsu'].includes(c.name)).map((c) => [c.name, c.type])).toEqual([
+      ['d', 'date'],
+      ['ts', 'datetime'],
+      ['tsu', 'datetime'],
+    ]);
+    // In a plan they are integers: days and µs, here read back through the engine's date operations.
+    const scan = p.source('external', 't', [], d.catalog.table('t')!.columns.map((c) => c.type));
+    const r = await d.queryPlanAsync(p.project(p.filter(p.project(scan, [p.col(0, 8, 'date'), p.col(0, 9, 'datetime')]), p.call('cmp_gt', [p.col(0, 0, 'date'), p.lit(0, 'date')], 'bool')), [p.call('year', [p.col(0, 0, 'date')], 'int'), p.call('microsecond', [p.col(0, 1, 'datetime')], 'int'), p.col(0, 0, 'date')]));
+    expect(r.rows).toEqual([[2024, 678_000, '2024-02-29']]);
   });
 
   it('every codec (snappy, gzip, zstd, none) reads the same rows', async () => {

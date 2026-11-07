@@ -53,7 +53,10 @@ async function readParquet(file: RandomAccessFile, req: FormatRequest): Promise<
     throw Object.assign(new Error(`not a readable Parquet file: ${(e as Error).message}`), { wholeFileMayHelp: true });
   }
   const schema = pq.parquetSchema(meta).children;
-  const fileCols: FormatColumn[] = schema.map((c) => ({ name: c.element.name, declType: parquetDeclType(c) }));
+  const fileCols: FormatColumn[] = schema.map((c) => {
+    const type = parquetTemporalType(c);
+    return { name: c.element.name, declType: parquetDeclType(c), ...(type ? { type } : {}) };
+  });
   if (req.schemaOnly) return { columns: fileCols, rows: [] };
   const out = req.columns ?? fileCols;
   const actual = new Map(fileCols.map((c) => [c.name.toLowerCase(), c.name]));
@@ -105,38 +108,33 @@ async function readParquet(file: RandomAccessFile, req: FormatRequest): Promise<
   return { columns: out, rows };
 }
 
-const pad = (n: number, w = 2): string => String(n).padStart(w, '0');
+/** µs as smaltdb holds them: a number within 2^53, else a bigint. */
+const asUs = (us: bigint): number | bigint => (us >= MIN_SAFE && us <= MAX_SAFE ? Number(us) : us);
 
-/** `YYYY-MM-DD HH:MM:SS[.fraction]` (UTC) for `seconds` since the epoch plus a fraction of `digits` digits. */
-function timestampText(seconds: bigint, fraction: bigint, digits: number): string {
-  const d = new Date(Number(seconds) * 1000);
-  let text = `${pad(d.getUTCFullYear(), 4)}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
-  if (fraction > 0n) text += '.' + fraction.toString().padStart(digits, '0').replace(/0+$/, '');
-  return text;
-}
+/** `v` divided by `d`, rounded toward negative infinity (nanoseconds are cut to µs: smaltdb ADR 0019 decision 1). */
+const floorDiv = (v: bigint, d: bigint): bigint => (v % d < 0n ? v / d - 1n : v / d);
 
-/** Split `v` units of 10^-digits seconds into whole seconds and the (non-negative) fraction. */
-function splitTime(v: bigint, digits: number): string {
-  const unit = 10n ** BigInt(digits);
-  let s = v / unit;
-  let f = v % unit;
-  if (f < 0n) {
-    s -= 1n;
-    f += unit;
-  }
-  return timestampText(s, f, digits);
-}
-
-/** Dates and timestamps as text, in SQLite's format (ordered like the values; zone maps compare them). */
+/**
+ * Dates and timestamps as smaltdb's `date` and `datetime` values (ADR 0019): days since 1970-01-01, and µs since
+ * 1970-01-01 00:00:00. Statistics read through the same parsers, so zone maps compare the same numbers.
+ */
 const PARQUET_PARSERS: Partial<Hyparquet.ParquetParsers> = {
-  dateFromDays: (days: number) => {
-    const d = new Date(days * 86_400_000);
-    return `${pad(d.getUTCFullYear(), 4)}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-  },
-  timestampFromMilliseconds: (ms: bigint) => splitTime(BigInt(ms), 3),
-  timestampFromMicroseconds: (us: bigint) => splitTime(BigInt(us), 6),
-  timestampFromNanoseconds: (ns: bigint) => splitTime(BigInt(ns), 9),
+  dateFromDays: (days: number) => days,
+  timestampFromMilliseconds: (ms: bigint) => asUs(BigInt(ms) * 1000n),
+  timestampFromMicroseconds: (us: bigint) => asUs(BigInt(us)),
+  timestampFromNanoseconds: (ns: bigint) => asUs(floorDiv(BigInt(ns), 1000n)),
 } as unknown as Partial<Hyparquet.ParquetParsers>;
+
+/** The temporal type of a top-level Parquet column, if it has one. */
+function parquetTemporalType(c: Hyparquet.SchemaTree): 'date' | 'datetime' | undefined {
+  const e = c.element;
+  if (c.children.length > 0) return undefined;
+  const ct = e.converted_type;
+  const lt = e.logical_type?.type;
+  if (ct === 'DATE' || lt === 'DATE') return 'date';
+  if (ct === 'TIMESTAMP_MILLIS' || ct === 'TIMESTAMP_MICROS' || lt === 'TIMESTAMP' || e.type === 'INT96') return 'datetime';
+  return undefined;
+}
 
 /** The declared type of a top-level Parquet column (nested ones are JSON text). */
 function parquetDeclType(c: Hyparquet.SchemaTree): string {
@@ -145,7 +143,8 @@ function parquetDeclType(c: Hyparquet.SchemaTree): string {
   const ct = e.converted_type;
   const lt = e.logical_type?.type;
   if (ct === 'DECIMAL' || lt === 'DECIMAL' || lt === 'FLOAT16') return 'REAL';
-  if (ct === 'DATE' || lt === 'DATE' || ct === 'TIMESTAMP_MILLIS' || ct === 'TIMESTAMP_MICROS' || lt === 'TIMESTAMP' || e.type === 'INT96') return 'TEXT';
+  if (ct === 'DATE' || lt === 'DATE') return 'DATE';
+  if (ct === 'TIMESTAMP_MILLIS' || ct === 'TIMESTAMP_MICROS' || lt === 'TIMESTAMP' || e.type === 'INT96') return 'TIMESTAMP';
   if (ct === 'UTF8' || ct === 'ENUM' || ct === 'JSON' || lt === 'STRING' || lt === 'ENUM' || lt === 'JSON' || lt === 'UUID') return 'TEXT';
   switch (e.type) {
     case 'BOOLEAN':

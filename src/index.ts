@@ -5,8 +5,8 @@
  * longer), then only the column chunks of the columns the statement uses, in the row groups whose
  * statistics do not rule them out. Files under 64 KB are read in one request.
  *
- * Decoding is done by hyparquet; codecs other than Snappy and uncompressed need
- * hyparquet-compressors, loaded on first use.
+ * Decoding is done by hyparquet; codecs other than Snappy and uncompressed come from
+ * hyparquet-compressors, a dependency of this plugin, loaded only for files that use them.
  */
 import type * as Hyparquet from 'hyparquet';
 import type { FormatColumn, FormatRequest, FormatResult, RandomAccessFile, SmaltPlugin, SqlValue, Zone } from 'smaltdb/engine';
@@ -34,7 +34,7 @@ async function compressors(): Promise<Hyparquet.Compressors> {
     return (await compressorsModule).compressors;
   } catch {
     compressorsModule = null;
-    throw new Error('this file uses a codec that needs the hyparquet-compressors package (npm install hyparquet-compressors)');
+    throw new Error("this file's codec could not be loaded (hyparquet-compressors, a dependency of @smaltdb/parquet: is it missing from the bundle?)");
   }
 }
 

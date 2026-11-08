@@ -9,7 +9,7 @@ async function run(): Promise<Check[]> {
   const check = (name: string, ok: boolean, detail?: unknown) => checks.push({ name, ok, detail: detail === undefined ? undefined : JSON.stringify(detail) });
   const db = await open('parquet-test', { storage: 'memory', worker: () => new Worker(new URL('./worker.js', location.href), { type: 'module' }) });
   try {
-    // Footer, column chunks and row groups by ranges; zstd through the optional hyparquet-compressors.
+    // Footer, column chunks and row groups by ranges; zstd through hyparquet-compressors.
     const pq = await db.query(`SELECT count(*), sum(amount), min(day), max(id) FROM read_parquet('${location.origin}/sales.parquet') WHERE id >= 1000`, undefined, { rowMode: 'array' });
     const pqTypes = await db.query(`SELECT i64, d, ts, dec, lst FROM read_parquet('${location.origin}/types.parquet') WHERE i32 = 1`, undefined, { rowMode: 'array' });
     check('Parquet over HTTP (zstd, row-group pruning, types)', JSON.stringify(pq) === JSON.stringify([[3000, 144154, '2024-01-21', 3999]]) && JSON.stringify(pqTypes) === JSON.stringify([[2 ** 40, '2024-02-29', '2024-01-02 03:04:05.678', 12.34, '[1,2]']]), [pq, pqTypes]);

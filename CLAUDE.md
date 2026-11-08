@@ -47,7 +47,7 @@ types; `npm run build` checks its declarations against smaltdb's published types
   read SQL from it (`test/setup-sql.ts` registers it; `test/sql-language.test.ts` checks it is the one used), and a worker
   entry registers it with `defineWorker({ languages: [sqlLanguage], plugins })`.
 - The plugin imports only types from `smaltdb/engine`; nothing from smaltdb is bundled or imported at run time.
-- Dependencies: `hyparquet` (MIT) and the optional peer `hyparquet-compressors`. They are never bundled into `dist/`, so npm installs them with their own licences. Adding or upgrading one needs the owner's agreement (smaltdb ADR 0012: third-party code stays in the plugin that needs it). The tests also install `@smaltdb/io` and `@smaltdb/external` (pinned in `packed.json`).
+- Dependencies: `hyparquet` and `hyparquet-compressors` (both MIT; the compressors also carry Google's Brotli decoder, Apache-2.0). They are never bundled into `dist/`, so npm installs them with their own licences. Adding or upgrading one needs the owner's agreement (smaltdb ADR 0012: third-party code stays in the plugin that needs it). The tests also install `@smaltdb/io` and `@smaltdb/external` (pinned in `packed.json`).
 - smaltql's docs examples that need Parquet (the SQL guide and references, which moved from smaltdb to smaltql) are marked `<!-- docs:plugin @smaltdb/parquet -->` there and run here (`test/docs-examples.test.ts`), against the docs at the pinned smaltql commit. After a smaltql docs change that touches them, update the `@smaltworks/smaltql` pin.
 - A change to the plugin interface belongs in smaltdb first. Update the `smaltdb` pin here once it is merged.
 - Don't reformat files with Prettier. No fixed sleeps in tests: wait with `until()` / `pause()` from

@@ -10,9 +10,11 @@ columns a statement uses and the row groups its filters cannot rule out are read
 
 ```sh
 npm install smaltdb @smaltdb/parquet
-# for gzip, zstd, brotli or LZ4-compressed files (Snappy needs nothing more):
-npm install hyparquet-compressors
 ```
+
+Snappy, gzip, zstd, Brotli and LZ4 files all read. The codecs other than Snappy come from
+[hyparquet-compressors](https://github.com/hyparam/hyparquet-compressors), which the plugin brings with it and loads
+only for files that use them.
 
 In the browser, install it in your engine worker entry and open the database with that worker:
 
